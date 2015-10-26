@@ -26,9 +26,11 @@ supervisor:
 
 /var/log/supervisor:
   file.directory:
-    - mode: 0
+    - dir_mode: 0755
+    - owner: root
+    - group: root
 
-supervisor-service:
+supervisord:
   service:
     {%- if grains['os_family'] == 'Debian' %}
     - name: supervisor
@@ -44,3 +46,4 @@ supervisor-service:
     - require:
       - file: /etc/supervisord.conf
       - file: /etc/init.d/supervisor
+      - file: /var/log/supervisor

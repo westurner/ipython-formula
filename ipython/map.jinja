@@ -1,9 +1,33 @@
 
-{# TODO: s/template/salt_name/g #}
-{% set template = salt['grains.filter_by']({
+{% set ipython = salt['grains.filter_by']({
     'default': {
-        'pkg': 'template',
-        'service': 'template',
-        'config': '/etc/template.conf',
+        'pkg': 'ipython',
+        'nbpkg2': 'ipython-notebook',
+        'nbpkg3': 'ipython3-notebook',
     },
-}, merge=salt['pillar.get']('template:lookup')) %}
+}, merge=salt['pillar.get']('ipython:lookup')) %}
+
+
+{% set cacfg={
+  "ca_name": "Example CA",
+  "bits": 2048,
+  "days": 3650,
+  "country": "US",
+  "CN": "Root CA"
+  "C": "C",
+  "ST": "ST",
+  "L": "L",
+  "O": "O",
+  "OU": "OU",
+  "emailAddress": "example@example.org"
+} %}
+
+
+{% set certcfg={
+  "ca_name": cacfg["ca_name"],
+  "CN": "example.org",
+  "days": 365,
+
+} %}
+
+

@@ -1,8 +1,12 @@
 
-# supervisord config courtesy of saltstack-formulas/graphite-formula 
+# ipython-formula/ipython/init.sls
+#
+
+{% from "ipython/map.jinja" import ipython with context %}
 
 # http://docs.saltstack.com/en/latest/ref/states/all/salt.states.pkgrepo.html#module-salt.states.pkgrepo
 # { Docker os defaults (would be in map.jinja) }
+
 
 # repo-xyz:
 #   pkgrepo.managed:
@@ -13,27 +17,16 @@
 ipython-system-packages:
   pkg.installed:
     pkgs:
-      - ipython-notebook
-      - ipython3-notebook
+      - {{ ipython.nbpkg2 }}
+      - {{ ipython.nbpkg3 }}
 
-python2-pip:
-  pkg.installed:
-    - python-pip
-
-{% if use_supervisord %}
 include:
+{# if TODO: if not defined(pip2) #}
+  - ipython.pip
+{# endif #}
+{%- if use_supervisord %}
   - ipython.supervisord
 {% endif %}
-
-{%- set pip_cachedir="/var/cache/pip" %}
-pip-cachedir-system:
-  file.directory:
-    - name: {{ pip_cachedir }}
-    - dir_mode: 0755
-    #- owner: root
-    #- group: root  # pip?
-    ##- file_mode: 0644
-    ##- recurse: True
 
 {%- set pip_requirements="requirements.txt" %}
 
@@ -63,6 +56,31 @@ group-ipython:
 {# see: pillar #}
 {% set ipy_users=["ipy",] %}
 {% for ipyuser in ipy_users %}
+{%- set homedir="/home/{0}".format(ipyuser) %}
+{%- set notebookdir="/home/{0}/notebooks".format(ipyuser) %}
+{%- set cachedir="/home/{0}/.cache/pip".format(ipyuser) %}
+{%- set supervisord_conf="/etc/supervisord/conf.d/ipython-user_{0}.conf".format(ipyuser) %}
+
+{%- set ipythondir="/home/{0}/.ipython".format(ipyuser) %}
+
+{%- set virtualenvdir="{0}/env".format(homedir) %}
+{%- set ipythonbindir="{0}/bin".format(virtualenvdir) %}
+{%- set ipythonbin="{0}/ipython".format(ipythonbindir) %}
+
+{%- set ipythoncluster_n="2" %}
+
+{# TODO: Generate a stable UUID (across restarts)
+{%- set ipythonidentfile="ipython.uuid" %}
+ipython-{{ ipyuser }}-uuid:
+  cmd.run:
+    - name: uuidgen >> {{ ipythonidentfile }}
+    - creates: {{ ipythonidentfile }}
+
+#}
+{%- set ipythonident="C9A2D170-46B8-4AAF-840A-0292D" -%}
+
+{%- set ipythoncertfile="{0}/.ssl/localcert.pem".format(ipythondir) -%}
+
 
 user-{{ ipyuser }}:
   user.present:
@@ -71,22 +89,20 @@ user-{{ ipyuser }}:
     - groups:
       - ipython
     #- removegroups: True
-    - home: /home/{{ ipyuser }}
+    - home: {{ homedir }}
     - createhome: True
     - shell: /bin/bash
     - require:
       - group: group-ipython
 
 
-
-{%- set notebookdir="/home/{0}/notebooks".format(ipyuser) %}
 ipython-notebook-directory:
   file.directory:
     - name: {{ notebookdir }}
     - owner: {{ ipyuser }}
     - dir_mode: 0755
     - require:
-      - user: {{ ipyuser }}
+      - user: user-{{ ipyuser }}
 
 # Pip install
 ipython-{{ ipyuser }}-pip:
@@ -95,12 +111,11 @@ ipython-{{ ipyuser }}-pip:
     - user: {{ ipyuser }}
 
 # http://docs.saltstack.com/en/latest/ref/states/all/salt.states.virtualenv_mod.html#module-salt.states.virtualenv_mod
-{%- set cachedir="/home/{0}/.cache/pip" %}
 
 pip-cachedir-{{ ipyuser }}:
   file.directory:
     - name: {{ cachedir }}
-    - owner: {{ ipyuser }}
+    - user: {{ ipyuser }}
     - dir_mode: 0755
     - makedirs: True
 
@@ -120,7 +135,6 @@ virtualenv-user-{{ ipyuser }}:
 # http://docs.saltstack.com/en/latest/ref/states/all/salt.states.pip_state.html
 
 {% if use_supervisord %}
-{%- set supervisord_conf="/etc/ipython/sites-enabled/user_{0}.conf".format(ipyuser) %}
 # http://docs.saltstack.com/en/latest/ref/states/all/salt.states.supervisord.html#module-salt.states.supervisord
 ipython-{{ ipyuser }}-server:
   supervisord:
@@ -129,16 +143,6 @@ ipython-{{ ipyuser }}-server:
       - pkg: supervisor
     - watch:
       - file: {{ supervisord_conf }}
-
-{%- set ipythondir="/home/{0}/.ipython".format(ipyuser) %}
-{# TODO: Generate a stable UUID (across restarts): salt.$(uuidgen) #}
-{%- set ipythonident="C9A2D170-46B8-4AAF-840A-0292D" -%}
-{%- set ipythoncertfile="{0}/.ssl/localcert.pem".format(ipythondir) -%}
-
-{%- set ipythonbindir="/home/{0}/env/bin" %}
-{%- set ipythonbin="{0}/ipython".format(ipythonbindir) %}
-
-{%- set ipythoncluster_n="2" %}
 
 ipython-{{ ipyuser }}-supervisord_conf:
   file.managed:
@@ -172,58 +176,8 @@ ipython-{{ ipyuser }}-supervisord_conf:
       autorestart=True
       numprocs=1
 
-# http://docs.saltstack.com/en/latest/ref/modules/all/salt.modules.tls.html
-
-python-openssl:
-  pkg.installed: []
-
-{% set cacfg={
-  "ca_name": "Example CA",
-  "bits": 2048,
-  "days": 3650,
-  "country": "US",
-  "CN": "Root CA"
-  "C": "C",
-  "ST": "ST",
-  "L": "L",
-  "O": "O",
-  "OU": "OU",
-  "emailAddress": "example@example.org"
-} %}
-
-ipython-ca:
-  module:
-    - run
-    - name: tls.create_ca
-    - bits: {{ cacfg["bits"] }}
-    - ca_name: {{ cacfg["ca_name"] }}
-    - days: {{ cacfg["days"] }}
-    - CN: {{ cacfg["CN"] }}
-    - C: {{ cacfg["C"] }}
-    - ST: {{ cacfg["ST"] }}
-    - L: {{ cacfg["L"] }}
-    - O: {{ cacfg["O"] }}
-    - OU: {{ cacfg["OU"] }}
-    - emailAddress: {{ cacfg["emailAddress"] }} 
-    - require:
-      - pkg: python-openssl
-
-{% set certcfg={
-  "ca_name": cacfg["ca_name"],
-  "CN": "example.org",
-  "days": 365,
-
-} %}
-
-ipython-server-cert:
-  module:
-    - run
-    - name: tls.create_ca_signed_cert
-    - ca_name: {{ certcfg["ca_name"] }}
-
-# /etc/pki/{{ certcfg["ca_name"] }}/certs/{{ certcfg["CN"] }}.crt
-#
-#
+  include:
+    - ipython.certs
 
 {% endif %}
 
